@@ -69,7 +69,7 @@
         postClickWait: 45,
       },
       phase3: {
-        sets: 2,
+        sets: 1,
         reps: 10,
         on: 10,
         off: 10,
@@ -98,14 +98,18 @@
       setPhaseText(base);
     }
 
-    function ensureAudioContext() {
+    // Create and resume AudioContext strictly inside user gesture
+    function unlockAudio() {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
       if (audioCtx.state === 'suspended') {
-        audioCtx.resume();
+        try {
+          audioCtx.resume();
+        } catch (e) {
+          console.error('AudioContext resume failed:', e);
+        }
       }
-      return audioCtx;
     }
 
     function sleep(ms) {
@@ -127,17 +131,21 @@
     }
 
     function internalBeep(freq, duration, waveType) {
-      const ctx = ensureAudioContext();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
+      if (!audioCtx) {
+        console.warn('AudioContext not unlocked yet');
+        return Promise.resolve();
+      }
+
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
 
       osc.type = waveType; // use waveType
       osc.frequency.value = freq;
 
       osc.connect(gain);
-      gain.connect(ctx.destination);
+      gain.connect(audioCtx.destination);
 
-      const now = ctx.currentTime;
+      const now = audioCtx.currentTime;
 
       // quick fade in/out to avoid clicks
       gain.gain.setValueAtTime(0, now);
@@ -228,16 +236,15 @@
     function startSequence() {
       if (started) return;
       started = true;
-      ensureAudioContext();
+      unlockAudio(); // create + resume AudioContext in the same user gesture
       if (startButton) startButton.style.display = 'none';
       setPhaseText('Starting…');
       runPhases();
     }
 
-    // Initial unlock / start listeners
-    document.addEventListener('click', startSequence, { once: true });
-    document.addEventListener('touchstart', startSequence, { once: true });
+    // Attach only real user interaction events directly to starter
     startButton.addEventListener('click', startSequence);
+    startButton.addEventListener('touchend', startSequence);
   </script>
 </body>
 </html>
