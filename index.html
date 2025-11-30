@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Beep Phases</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      font-family: sans-serif;
+      background: #111;
+      color: #eee;
+    }
+    .container {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 1rem;
+    }
+    #phase {
+      font-size: 2rem;
+      font-weight: bold;
+    }
+    #info {
+      font-size: 0.95rem;
+      opacity: 0.8;
+      max-width: 600px;
+    }
+    #startButton {
+      padding: 0.75rem 1.5rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      border: none;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div id="phase">Waiting for user interaction…</div>
+    <div id="info">
+      Click or tap anywhere (or the button) to enable audio and start.<br>
+      Phase 1: 10× [on beep, 5s, off beep, 5s]<br>
+      Phase 2: 2× [two quick on beeps, wait for click/tap, 45s]<br>
+      Phase 3: 10× [on beep, 10s, off beep, 10s]
+    </div>
+    <button id="startButton">Start</button>
+  </div>
+
+  <script>
+    const ON_FREQ = 523.25;   // one octave above middle C (C5)
+    const OFF_FREQ = 261.63;  // middle C (C4)
+    const BEEP_DURATION = 0.2; // seconds (~200 ms)
+
+    // High-level routine configuration (seconds)
+    const timings = {
+      phase1: {
+        sets: 1,
+        reps: 10,
+        on: 5,
+        off: 5,
+      },
+      phase2: {
+        sets: 2,
+        postClickWait: 45,
+      },
+      phase3: {
+        sets: 2,
+        reps: 10,
+        on: 10,
+        off: 10,
+      },
+    };
+
+    // Rest between sets for phases 1 and 3 (seconds)
+    const SET_REST_SECONDS = 60;
+
+    // Global time scaling factor (set to 1 for real timings, < 1 for faster testing)
+    const TIME_SCALE = 1; // e.g., 0.1 means 5s -> 0.5s
+
+    let audioCtx = null;
+    let started = false;
+
+    const phaseEl = document.getElementById('phase');
+    const startButton = document.getElementById('startButton');
+
+    function setPhaseText(text) {
+      phaseEl.textContent = text;
+    }
+
+    function setPhaseStatus(phaseName, currentSet, totalSets, extra = '') {
+      let base = `${phaseName} – Set ${currentSet}/${totalSets}`;
+      if (extra) base += ` – ${extra}`;
+      setPhaseText(base);
+    }
+
+    function ensureAudioContext() {
+      if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      return audioCtx;
+    }
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function toMs(seconds) {
+      return seconds * 1000 * TIME_SCALE;
+    }
+
+    // Base beep: smooth sine tone
+    function beep(freq, duration = BEEP_DURATION) {
+      return internalBeep(freq, duration, 'sine');
+    }
+
+    // Phase-2 special: slightly sharper, still not too harsh (triangle)
+    function beepSquare(freq, duration = BEEP_DURATION) {
+      return internalBeep(freq, duration, 'triangle');
+    }
+
+    function internalBeep(freq, duration, waveType) {
+      const ctx = ensureAudioContext();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = waveType; // use waveType
+      osc.frequency.value = freq;
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      const now = ctx.currentTime;
+
+      // quick fade in/out to avoid clicks
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.0, now + duration);
+
+      osc.start(now);
+      osc.stop(now + duration + 0.05);
+
+      return new Promise(resolve => {
+        osc.onended = resolve;
+      });
+    }
+
+    function waitForClickOrTap() {
+      return new Promise(resolve => {
+        const handler = () => {
+          document.removeEventListener('click', handler);
+          document.removeEventListener('touchstart', handler);
+          resolve();
+        };
+        document.addEventListener('click', handler);
+        document.addEventListener('touchstart', handler);
+      });
+    }
+
+    async function runPhase1() {
+      const { sets, reps, on, off } = timings.phase1;
+      for (let s = 1; s <= sets; s++) {
+        for (let r = 1; r <= reps; r++) {
+          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (on)`);
+          await beep(ON_FREQ);
+          await sleep(toMs(on));
+
+          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (off)`);
+          await beep(OFF_FREQ);
+          await sleep(toMs(off));
+        }
+        if (s < sets) {
+          setPhaseStatus('Phase 1', s, sets, `Resting ${SET_REST_SECONDS}s between sets`);
+          await sleep(toMs(SET_REST_SECONDS));
+        }
+      }
+    }
+
+    async function runPhase2() {
+      const { sets, postClickWait } = timings.phase2;
+      for (let s = 1; s <= sets; s++) {
+        setPhaseStatus('Phase 2', s, sets, 'Beeps');
+        await beepSquare(ON_FREQ, 0.12); // shorter, slightly sharper
+        await sleep(toMs(0.005));        // very small gap
+        await beepSquare(ON_FREQ, 0.12);
+
+        setPhaseStatus('Phase 2', s, sets, 'Waiting for click/tap');
+        await waitForClickOrTap();
+
+        setPhaseStatus('Phase 2', s, sets, `Waiting ${postClickWait}s`);
+        await sleep(toMs(postClickWait));
+      }
+    }
+
+    async function runPhase3() {
+      const { sets, reps, on, off } = timings.phase3;
+      for (let s = 1; s <= sets; s++) {
+        for (let r = 1; r <= reps; r++) {
+          setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (on)`);
+          await beep(ON_FREQ);
+          await sleep(toMs(on));
+
+          setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (off)`);
+          await beep(OFF_FREQ);
+          await sleep(toMs(off));
+        }
+        if (s < sets) {
+          setPhaseStatus('Phase 3', s, sets, `Resting ${SET_REST_SECONDS}s between sets`);
+          await sleep(toMs(SET_REST_SECONDS));
+        }
+      }
+    }
+
+    async function runPhases() {
+      await runPhase1();
+      await runPhase2();
+      await runPhase3();
+      setPhaseText('Done');
+    }
+
+    function startSequence() {
+      if (started) return;
+      started = true;
+      ensureAudioContext();
+      if (startButton) startButton.style.display = 'none';
+      setPhaseText('Starting…');
+      runPhases();
+    }
+
+    // Initial unlock / start listeners
+    document.addEventListener('click', startSequence, { once: true });
+    document.addEventListener('touchstart', startSequence, { once: true });
+    startButton.addEventListener('click', startSequence);
+  </script>
+</body>
+</html>
