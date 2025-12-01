@@ -51,7 +51,7 @@
     <button id="startButton">Start</button>
   </div>
 
-  <script>
+    <script>
     const ON_FREQ = 523.25;   // one octave above middle C (C5)
     const OFF_FREQ = 261.63;  // middle C (C4)
     const BEEP_DURATION = 0.2; // seconds (~200 ms)
@@ -120,6 +120,28 @@
       return seconds * 1000 * TIME_SCALE;
     }
 
+    // Wait that can be fast-forwarded by a click/tap anywhere on the page
+    function waitWithSkip(seconds) {
+      const ms = toMs(seconds);
+      return new Promise(resolve => {
+        const handler = () => {
+          cleanup();
+          resolve();
+        };
+        const timeoutId = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, ms);
+        function cleanup() {
+          clearTimeout(timeoutId);
+          document.removeEventListener('click', handler);
+          document.removeEventListener('touchstart', handler);
+        }
+        document.addEventListener('click', handler);
+        document.addEventListener('touchstart', handler);
+      });
+    }
+
     // Base beep: smooth sine tone
     function beep(freq, duration = BEEP_DURATION) {
       return internalBeep(freq, duration, 'sine');
@@ -147,9 +169,9 @@
 
       const now = audioCtx.currentTime;
 
-      // quick fade in/out to avoid clicks
+      // quick fade in/out to avoid clicks; slightly louder
       gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.4, now + 0.01);
+      gain.gain.linearRampToValueAtTime(0.8, now + 0.01);
       gain.gain.linearRampToValueAtTime(0.0, now + duration);
 
       osc.start(now);
@@ -178,15 +200,15 @@
         for (let r = 1; r <= reps; r++) {
           setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (on)`);
           await beep(ON_FREQ);
-          await sleep(toMs(on));
+          await waitWithSkip(on);
 
           setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (off)`);
           await beep(OFF_FREQ);
-          await sleep(toMs(off));
+          await waitWithSkip(off);
         }
         if (s < sets) {
           setPhaseStatus('Phase 1', s, sets, `Resting ${SET_REST_SECONDS}s between sets`);
-          await sleep(toMs(SET_REST_SECONDS));
+          await waitWithSkip(SET_REST_SECONDS);
         }
       }
     }
@@ -196,14 +218,32 @@
       for (let s = 1; s <= sets; s++) {
         setPhaseStatus('Phase 2', s, sets, 'Beeps');
         await beepSquare(ON_FREQ, 0.12); // shorter, slightly sharper
-        await sleep(toMs(0.005));        // very small gap
+        await sleep(toMs(0.005));        // very small gap, not worth skipping
         await beepSquare(ON_FREQ, 0.12);
 
         setPhaseStatus('Phase 2', s, sets, 'Waiting for click/tap');
         await waitForClickOrTap();
 
         setPhaseStatus('Phase 2', s, sets, `Waiting ${postClickWait}s`);
-        await sleep(toMs(postClickWait));
+        await waitWithSkip(postClickWait);
+      }
+    }
+
+    async function playCMajorScale() {
+      // C major scale from middle C up one octave
+      const freqs = [
+        261.63, // C4
+        293.66, // D4
+        329.63, // E4
+        349.23, // F4
+        392.0,  // G4
+        440.0,  // A4
+        493.88, // B4
+        523.25, // C5
+      ];
+      for (const f of freqs) {
+        await beep(f, 0.135);
+        // await sleep(toMs(0.05));
       }
     }
 
@@ -213,15 +253,21 @@
         for (let r = 1; r <= reps; r++) {
           setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (on)`);
           await beep(ON_FREQ);
-          await sleep(toMs(on));
+          await waitWithSkip(on);
 
-          setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (off)`);
-          await beep(OFF_FREQ);
-          await sleep(toMs(off));
+          const isLastRep = (s === sets && r === reps);
+          if (isLastRep) {
+            setPhaseStatus('Phase 3', s, sets, `Final rep – C major scale`);
+            await playCMajorScale();
+          } else {
+            setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (off)`);
+            await beep(OFF_FREQ);
+            await waitWithSkip(off);
+          }
         }
         if (s < sets) {
           setPhaseStatus('Phase 3', s, sets, `Resting ${SET_REST_SECONDS}s between sets`);
-          await sleep(toMs(SET_REST_SECONDS));
+          await waitWithSkip(SET_REST_SECONDS);
         }
       }
     }
