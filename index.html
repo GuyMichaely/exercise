@@ -152,35 +152,59 @@
       return internalBeep(freq, duration, 'triangle');
     }
 
-    function internalBeep(freq, duration, waveType) {
-      if (!audioCtx) {
-        console.warn('AudioContext not unlocked yet');
-        return Promise.resolve();
-      }
+    // assumes a global audioCtx already exists
 
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
+function internalBeep(freq, duration, waveType) {
+  if (!audioCtx) {
+    console.warn('AudioContext not unlocked yet');
+    return Promise.resolve();
+  }
 
-      osc.type = waveType; // use waveType
-      osc.frequency.value = freq;
+  // lazy-init a master gain so all beeps go through one place
+  if (!window.masterGain) {
+    const mg = audioCtx.createGain();
+    mg.gain.value = 1.0; // do not exceed 1.0 here -> no clipping at destination
 
-      osc.connect(gain);
-      gain.connect(audioCtx.destination);
+    // optional: light compressor to keep it clean but dense
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -12;
+    comp.knee.value = 30;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
 
-      const now = audioCtx.currentTime;
+    mg.connect(comp);
+    comp.connect(audioCtx.destination);
 
-      // quick fade in/out to avoid clicks; slightly louder
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(0.8, now + 0.01);
-      gain.gain.linearRampToValueAtTime(0.0, now + duration);
+    window.masterGain = mg;
+  }
 
-      osc.start(now);
-      osc.stop(now + duration + 0.05);
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
 
-      return new Promise(resolve => {
-        osc.onended = resolve;
-      });
-    }
+  osc.type = waveType;          // keep your existing waveform (sine/triangle)
+  osc.frequency.value = freq;   // keep your existing frequency
+
+  osc.connect(gain);
+  gain.connect(window.masterGain);
+
+  const now = audioCtx.currentTime;
+
+  // louder envelope: go all the way up to 1.0 and hold most of the duration
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(1.0, now + 0.005); // quick fade-in to full scale
+  if (duration > 0.01) {
+    gain.gain.setValueAtTime(1.0, now + duration - 0.005); // stay loud
+  }
+  gain.gain.linearRampToValueAtTime(0.0, now + duration);  // fade out to avoid clicks
+
+  osc.start(now);
+  osc.stop(now + duration + 0.05);
+
+  return new Promise(resolve => {
+    osc.onended = resolve;
+  });
+}
 
     function waitForClickOrTap() {
       return new Promise(resolve => {
