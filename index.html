@@ -61,35 +61,29 @@
 
     // High-level routine configuration (seconds)
     const timings = {
-      phase1: {
-        sets: 1,
-        reps: 10,
-        on: 5,
-        off: 5,
-      },
-      phase2: {
-        sets: 2,
-        postClickWait: 45,
-      },
-      phase3: {
-        sets: 1,
-        reps: 10,
-        on: 10,
-        off: 10,
-      },
+      phase1: { sets: 1, reps: 10, on: 5, off: 5 },
+      phase2: { sets: 2, postClickWait: 45 },
+      phase3: { sets: 1, reps: 10, on: 10, off: 10 },
     };
 
     // Rest between sets for phases 1 and 3 (seconds)
     const SET_REST_SECONDS = 60;
 
     // Global time scaling factor (set to 1 for real timings, < 1 for faster testing)
-    const TIME_SCALE = 1; // e.g., 0.1 means 5s -> 0.5s
+    const TIME_SCALE = .1; // e.g., 0.1 means 5s -> 0.5s
 
     let audioCtx = null;
     let started = false;
 
     const phaseEl = document.getElementById('phase');
     const startButton = document.getElementById('startButton');
+
+    // Single gesture event to avoid double-fire on Pixel 6 (touch + synthetic click)
+    // Pointer events are supported on modern Android/Chrome.
+    // Use only 'click' everywhere.
+    // On Pixel 6/Chrome, the double-trigger happens when you listen to BOTH touch and click.
+    // Listening to click alone avoids the duplicate and is reliably treated as a user gesture for audio.
+    const GESTURE_EVENT = 'click';
 
     function setPhaseText(text) {
       phaseEl.textContent = text;
@@ -107,11 +101,7 @@
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
       if (audioCtx.state === 'suspended') {
-        try {
-          audioCtx.resume();
-        } catch (e) {
-          console.error('AudioContext resume failed:', e);
-        }
+        audioCtx.resume().catch(e => console.error('AudioContext resume failed:', e));
       }
     }
 
@@ -123,36 +113,11 @@
       return seconds * 1000 * TIME_SCALE;
     }
 
-    /**
-     * Mobile tap double-fire fix:
-     * Prefer Pointer Events. If unavailable, fall back to touchstart.
-     * Avoid attaching both touch + click listeners, which causes a tap to be seen twice.
-     */
-    const USE_POINTER = 'PointerEvent' in window;
-
-    function addUserGestureListener(target, handler, opts = {}) {
-      if (USE_POINTER) {
-        target.addEventListener('pointerdown', handler, { passive: false, ...opts });
-      } else {
-        target.addEventListener('touchstart', handler, { passive: false, ...opts });
-      }
-    }
-
-    function removeUserGestureListener(target, handler, opts = {}) {
-      if (USE_POINTER) {
-        target.removeEventListener('pointerdown', handler, { passive: false, ...opts });
-      } else {
-        target.removeEventListener('touchstart', handler, { passive: false, ...opts });
-      }
-    }
-
-    // Wait that can be fast-forwarded by a tap anywhere on the page
+    // Wait that can be fast-forwarded by a tap/click anywhere on the page
     function waitWithSkip(seconds) {
       const ms = toMs(seconds);
       return new Promise(resolve => {
-        const handler = (e) => {
-          // Prevent the gesture from generating extra synthetic events (where applicable)
-          if (e && typeof e.preventDefault === 'function') e.preventDefault();
+        const handler = () => {
           cleanup();
           resolve();
         };
@@ -160,13 +125,11 @@
           cleanup();
           resolve();
         }, ms);
-
         function cleanup() {
           clearTimeout(timeoutId);
-          removeUserGestureListener(document, handler);
+          document.removeEventListener(GESTURE_EVENT, handler);
         }
-
-        addUserGestureListener(document, handler);
+        document.addEventListener(GESTURE_EVENT, handler);
       });
     }
 
@@ -231,14 +194,13 @@
       });
     }
 
-    function waitForTapAnywhere() {
+    function waitForGesture() {
       return new Promise(resolve => {
-        const handler = (e) => {
-          if (e && typeof e.preventDefault === 'function') e.preventDefault();
-          removeUserGestureListener(document, handler);
+        const handler = () => {
+          document.removeEventListener(GESTURE_EVENT, handler);
           resolve();
         };
-        addUserGestureListener(document, handler);
+        document.addEventListener(GESTURE_EVENT, handler);
       });
     }
 
@@ -270,7 +232,7 @@
         await beepSquare(ON_FREQ, 0.12);
 
         setPhaseStatus('Phase 2', s, sets, 'Waiting for tap');
-        await waitForTapAnywhere();
+        await waitForGesture();
 
         setPhaseStatus('Phase 2', s, sets, `Waiting ${postClickWait}s`);
         await waitWithSkip(postClickWait);
@@ -278,6 +240,7 @@
     }
 
     async function playCMajorScale() {
+      // C major scale from middle C up one octave
       const freqs = [
         261.63, // C4
         293.66, // D4
@@ -325,9 +288,7 @@
       setPhaseText('Done');
     }
 
-    function startSequence(e) {
-      // Prevent any follow-on synthetic events from the same gesture
-      if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    function startSequence() {
       if (started) return;
       started = true;
       unlockAudio();
@@ -336,8 +297,10 @@
       runPhases();
     }
 
-    // Use a single gesture event type so mobile taps don't register twice
-    addUserGestureListener(startButton, startSequence);
+    // Attach only ONE gesture event so a Pixel 6 tap doesn't register twice
+    startButton.addEventListener(GESTURE_EVENT, startSequence);
+    // Also allow tapping anywhere to start (matches the instructions on-screen)
+    document.addEventListener(GESTURE_EVENT, startSequence, { once: true });
   </script>
 </body>
 </html>
