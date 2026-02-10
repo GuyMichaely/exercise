@@ -23,7 +23,7 @@
     }
 
     body.done {
-      background: #222200;
+      background: #736732;
     }
     .container {
       height: 100%;
@@ -335,40 +335,40 @@ function beepSquare(freq, duration = BEEP_DURATION, when = null) {
 
 
     async function runPhase3() {
-  const { sets, reps, on, off } = timings.phase3;
+      const { sets, reps, on, off } = timings.phase3;
 
-  for (let s = 1; s <= sets; s++) {
-    for (let r = 1; r <= reps; r++) {
+      for (let s = 1; s <= sets; s++) {
+        for (let r = 1; r <= reps; r++) {
 
-      setExerciseOn(true);
-      const onBase = phaseStatusString('Phase 3', s, sets, `Rep ${r}/${reps} (on)`);
-      const onWait = waitWithCountdown(on, onBase);
-      fireAndForget(beep(ON_FREQ));
-      await onWait;
+          setExerciseOn(true);
+          const onBase = phaseStatusString('Phase 3', s, sets, `Rep ${r}/${reps} (on)`);
+          const onWait = waitWithCountdown(on, onBase);
+          fireAndForget(beep(ON_FREQ));
+          await onWait;
 
-      const isLastRep = (s === sets && r === reps);
-      if (isLastRep) {
-        setPhaseStatus('Phase 3', s, sets, `Final rep – C major scale`);
-        setExerciseOn(true);
-        await playCMajorScale(); // keep awaited; this *is* the timed audio event
-      } else {
-        setExerciseOn(false);
-        const offBase = phaseStatusString('Phase 3', s, sets, `Rep ${r}/${reps} (off)`);
-        const offWait = waitWithCountdown(off, offBase);
-        fireAndForget(beep(OFF_FREQ));
-        await offWait;
+          const isLastRep = (s === sets && r === reps);
+    if (isLastRep) {
+      setExerciseOn(true);     // keep green during the final scale
+      playCMajorScale(); // still audible
+    } else {
+      setExerciseOn(false);
+      const offBase = phaseStatusString('Phase 3', s, sets, `Rep ${r}/${reps} (off)`);
+      const offWait = waitWithCountdown(off, offBase);
+      beep(OFF_FREQ).catch(()=>{});
+      await offWait;
+    }
+
+        }
+
+        if (s < sets) {
+          setExerciseOn(false);
+          await waitWithCountdown(
+            SET_REST_SECONDS,
+            phaseStatusString('Phase 3', s, sets, `Resting ${SET_REST_SECONDS}s between sets`)
+          );
+        }
       }
     }
-
-    if (s < sets) {
-      setExerciseOn(false);
-      await waitWithCountdown(
-        SET_REST_SECONDS,
-        phaseStatusString('Phase 3', s, sets, `Resting ${SET_REST_SECONDS}s between sets`)
-      );
-    }
-  }
-}
 
 
 
@@ -380,6 +380,8 @@ function beepSquare(freq, duration = BEEP_DURATION, when = null) {
       await runPhase2();
       await runPhase3();
       setPhaseText('Done');
+      document.body.classList.add('done');
+      document.body.classList.remove('exercise-on');
     }
 
 
