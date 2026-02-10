@@ -9,10 +9,21 @@
       padding: 0;
       height: 100%;
       font-family: sans-serif;
-      background: #111;
       color: #eee;
       /* Reduce synthetic delayed/duplicated click behavior on mobile */
       touch-action: manipulation;
+    }
+
+    body {
+      background: #111;
+    }
+
+    body.exercise-on {
+      background: #25562d;
+    }
+
+    body.done {
+      background: #222200;
     }
     .container {
       height: 100%;
@@ -33,13 +44,6 @@
       opacity: 0.8;
       max-width: 600px;
     }
-    #startButton {
-      padding: 0.75rem 1.5rem;
-      font-size: 1rem;
-      border-radius: 4px;
-      border: none;
-      cursor: pointer;
-    }
   </style>
 </head>
 <body>
@@ -51,13 +55,14 @@
       Phase 2: 2× [two quick on beeps, wait for click/tap, 45s]<br>
       Phase 3: 10× [on beep, 10s, off beep, 10s]
     </div>
-    <button id="startButton" type="button">Start</button>
   </div>
+
 
   <script>
     const ON_FREQ = 523.25;   // one octave above middle C (C5)
     const OFF_FREQ = 261.63;  // middle C (C4)
     const BEEP_DURATION = 0.2; // seconds (~200 ms)
+
 
     // High-level routine configuration (seconds)
     const timings = {
@@ -66,17 +71,21 @@
       phase3: { sets: 1, reps: 10, on: 10, off: 10 },
     };
 
+
     // Rest between sets for phases 1 and 3 (seconds)
     const SET_REST_SECONDS = 60;
+
 
     // Global time scaling factor (set to 1 for real timings, < 1 for faster testing)
     const TIME_SCALE = 1; // e.g., 0.1 means 5s -> 0.5s
 
+
     let audioCtx = null;
     let started = false;
 
+
     const phaseEl = document.getElementById('phase');
-    const startButton = document.getElementById('startButton');
+
 
     // Single gesture event to avoid double-fire on Pixel 6 (touch + synthetic click)
     // Pointer events are supported on modern Android/Chrome.
@@ -85,115 +94,156 @@
     // Listening to click alone avoids the duplicate and is reliably treated as a user gesture for audio.
     const GESTURE_EVENT = 'click';
 
+
+    function setExerciseOn(isOn) {
+      document.body.classList.toggle('exercise-on', !!isOn);
+    }
+
+
     function setPhaseText(text) {
       phaseEl.textContent = text;
     }
 
-    function setPhaseStatus(phaseName, currentSet, totalSets, isOn, extra = '') {
+    function phaseStatusString(phaseName, currentSet, totalSets, extra = '') {
       let base = `${phaseName} – Set ${currentSet}/${totalSets}`;
       if (extra) base += ` – ${extra}`;
-      document.querySelector('body').style['background-color'] = isOn ? "0f0" : "#111";
-      setPhaseText(base);
+      return base;
     }
 
+    // Sets the countdown text immediately (no intermediate label), then keeps it updated.
+    function waitWithCountdown(seconds, baseText) {
+      const render = (t) => setPhaseText(`${baseText} – ${t.toFixed(1)}s left`);
+      render(seconds * TIME_SCALE);      // initial paint, immediately
+      return waitWithSkip(seconds, render);
+    }
+
+
+    function setPhaseStatus(phaseName, currentSet, totalSets, extra = '') {
+      let base = `${phaseName} – Set ${currentSet}/${totalSets}`;
+      if (extra) base += ` – ${extra}`;
+      setPhaseText(base);
+      return base;
+    }
+
+
     // Create and resume AudioContext strictly inside user gesture
-    function unlockAudio() {
+    async function unlockAudio() {
       if (!audioCtx) {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
       }
       if (audioCtx.state === 'suspended') {
-        audioCtx.resume().catch(e => console.error('AudioContext resume failed:', e));
+        await audioCtx.resume();
       }
     }
+
+
 
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
     }
 
+
     function toMs(seconds) {
       return seconds * 1000 * TIME_SCALE;
     }
 
+
     // Wait that can be fast-forwarded by a tap/click anywhere on the page
-    function waitWithSkip(seconds) {
-      const ms = toMs(seconds);
+    function waitWithSkip(seconds, onTick) {
+      const totalMs = toMs(seconds);
+
       return new Promise(resolve => {
+        const start = performance.now();
+
+        const tick = () => {
+          const elapsed = performance.now() - start;
+          const remainingMs = Math.max(0, totalMs - elapsed);
+          if (onTick) onTick(remainingMs / 1000);
+        };
+
+        const intervalId = setInterval(tick, 100);
+        tick();
+
         const handler = () => {
           cleanup();
           resolve();
         };
+
         const timeoutId = setTimeout(() => {
           cleanup();
           resolve();
-        }, ms);
+        }, totalMs);
+
         function cleanup() {
           clearTimeout(timeoutId);
+          clearInterval(intervalId);
           document.removeEventListener(GESTURE_EVENT, handler);
         }
+
         document.addEventListener(GESTURE_EVENT, handler);
       });
     }
 
-    // Base beep: smooth sine tone
-    function beep(freq, duration = BEEP_DURATION) {
-      return internalBeep(freq, duration, 'sine');
+    function fireAndForget(p) {
+      // avoid unhandled rejection noise if something ever throws
+      p?.catch?.(() => {});
     }
 
-    // Phase-2 special: slightly sharper, still not too harsh (triangle)
-    function beepSquare(freq, duration = BEEP_DURATION) {
-      return internalBeep(freq, duration, 'triangle');
-    }
+    function internalBeep(freq, duration, waveType, when = null) {
+  if (!audioCtx) {
+    console.warn('AudioContext not unlocked yet');
+    return Promise.resolve();
+  }
 
-    function internalBeep(freq, duration, waveType) {
-      if (!audioCtx) {
-        console.warn('AudioContext not unlocked yet');
-        return Promise.resolve();
-      }
+  if (!window.masterGain) {
+    const mg = audioCtx.createGain();
+    mg.gain.value = 1.0;
 
-      // lazy-init a master gain so all beeps go through one place
-      if (!window.masterGain) {
-        const mg = audioCtx.createGain();
-        mg.gain.value = 1.0; // do not exceed 1.0 here -> no clipping at destination
+    const comp = audioCtx.createDynamicsCompressor();
+    comp.threshold.value = -12;
+    comp.knee.value = 30;
+    comp.ratio.value = 8;
+    comp.attack.value = 0.003;
+    comp.release.value = 0.25;
 
-        // optional: light compressor to keep it clean but dense
-        const comp = audioCtx.createDynamicsCompressor();
-        comp.threshold.value = -12;
-        comp.knee.value = 30;
-        comp.ratio.value = 8;
-        comp.attack.value = 0.003;
-        comp.release.value = 0.25;
+    mg.connect(comp);
+    comp.connect(audioCtx.destination);
+    window.masterGain = mg;
+  }
 
-        mg.connect(comp);
-        comp.connect(audioCtx.destination);
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
 
-        window.masterGain = mg;
-      }
+  osc.type = waveType;
+  osc.frequency.value = freq;
 
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(window.masterGain);
 
-      osc.type = waveType;
-      osc.frequency.value = freq;
+  const startAt = (when ?? audioCtx.currentTime);
+  const endAt = startAt + duration;
 
-      osc.connect(gain);
-      gain.connect(window.masterGain);
+  gain.gain.setValueAtTime(0, startAt);
+  gain.gain.linearRampToValueAtTime(1.0, startAt + 0.005);
+  if (duration > 0.01) {
+    gain.gain.setValueAtTime(1.0, endAt - 0.005);
+  }
+  gain.gain.linearRampToValueAtTime(0.0, endAt);
 
-      const now = audioCtx.currentTime;
+  osc.start(startAt);
+  osc.stop(endAt + 0.05);
 
-      gain.gain.setValueAtTime(0, now);
-      gain.gain.linearRampToValueAtTime(1.0, now + 0.005);
-      if (duration > 0.01) {
-        gain.gain.setValueAtTime(1.0, now + duration - 0.005);
-      }
-      gain.gain.linearRampToValueAtTime(0.0, now + duration);
+  return new Promise(resolve => { osc.onended = resolve; });
+}
 
-      osc.start(now);
-      osc.stop(now + duration + 0.05);
+function beep(freq, duration = BEEP_DURATION, when = null) {
+  return internalBeep(freq, duration, 'sine', when);
+}
+function beepSquare(freq, duration = BEEP_DURATION, when = null) {
+  return internalBeep(freq, duration, 'triangle', when);
+}
 
-      return new Promise(resolve => {
-        osc.onended = resolve;
-      });
-    }
+
 
     function waitForGesture() {
       return new Promise(resolve => {
@@ -205,40 +255,66 @@
       });
     }
 
-    async function runPhase1() {
-      const { sets, reps, on, off } = timings.phase1;
-      for (let s = 1; s <= sets; s++) {
-        for (let r = 1; r <= reps; r++) {
-          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (on)`, true);
-          await beep(ON_FREQ);
-          await waitWithSkip(on);
 
-          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (off)`, false);
-          await beep(OFF_FREQ);
-          await waitWithSkip(off);
-        }
-        if (s < sets) {
-          setPhaseStatus('Phase 1', s, sets, `Resting ${SET_REST_SECONDS}s between sets`, false);
-          await waitWithSkip(SET_REST_SECONDS);
-        }
-      }
+    async function runPhase1() {
+  const { sets, reps, on, off } = timings.phase1;
+
+  for (let s = 1; s <= sets; s++) {
+    for (let r = 1; r <= reps; r++) {
+
+      // ON segment
+      setExerciseOn(true);
+      const onBase = phaseStatusString('Phase 1', s, sets, `Rep ${r}/${reps} (on)`);
+      const onWait = waitWithCountdown(on, onBase);  // countdown starts immediately
+      fireAndForget(beep(ON_FREQ));                  // beep plays in parallel
+      await onWait;
+
+      // OFF segment
+      setExerciseOn(false);
+      const offBase = phaseStatusString('Phase 1', s, sets, `Rep ${r}/${reps} (off)`);
+      const offWait = waitWithCountdown(off, offBase);
+      fireAndForget(beep(OFF_FREQ));
+      await offWait;
     }
+
+    if (s < sets) {
+      setExerciseOn(false);
+      await waitWithCountdown(
+        SET_REST_SECONDS,
+        phaseStatusString('Phase 1', s, sets, `Resting ${SET_REST_SECONDS}s between sets`)
+      );
+    }
+  }
+}
+
+
+
+
 
     async function runPhase2() {
-      const { sets, postClickWait } = timings.phase2;
-      for (let s = 1; s <= sets; s++) {
-        setPhaseStatus('Phase 2', s, sets, 'Beeps', true);
-        await beepSquare(ON_FREQ, 0.12);
-        await sleep(toMs(0.005));
-        await beepSquare(ON_FREQ, 0.12);
+  const { sets, postClickWait } = timings.phase2;
 
-        setPhaseStatus('Phase 2', s, sets, 'Waiting for tap', true);
-        await waitForGesture();
+  for (let s = 1; s <= sets; s++) {
+    // Immediately show the real state (no "Beeps" step)
+    setPhaseStatus('Phase 2', s, sets, 'Waiting for tap');
+    setExerciseOn(true);
 
-        setPhaseStatus('Phase 2', s, sets, `Waiting ${postClickWait}s`, false);
-        await waitWithSkip(postClickWait);
-      }
-    }
+    // Schedule the two marker beeps without awaiting (no timing influence)
+    const t0 = audioCtx.currentTime;
+    beepSquare(ON_FREQ, 0.12, t0).catch(()=>{});
+    beepSquare(ON_FREQ, 0.12, t0 + 0.125).catch(()=>{});
+
+    // Now just wait for the user's tap
+    await waitForGesture();
+
+    // Then do the timed wait
+    setExerciseOn(false);
+    await waitWithCountdown(
+      postClickWait,
+      phaseStatusString('Phase 2', s, sets, `Waiting ${postClickWait}s`)
+    );
+  }
+}
 
     async function playCMajorScale() {
       // C major scale from middle C up one octave
@@ -257,30 +333,47 @@
       }
     }
 
-    async function runPhase3() {
-      const { sets, reps, on, off } = timings.phase3;
-      for (let s = 1; s <= sets; s++) {
-        for (let r = 1; r <= reps; r++) {
-          setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (on)`, true);
-          await beep(ON_FREQ);
-          await waitWithSkip(on);
 
-          const isLastRep = (s === sets && r === reps);
-          if (isLastRep) {
-            setPhaseStatus('Phase 3', s, sets, `Final rep – C major scale`, false);
-            await playCMajorScale();
-          } else {
-            setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (off)`, false);
-            await beep(OFF_FREQ);
-            await waitWithSkip(off);
-          }
-        }
-        if (s < sets) {
-          setPhaseStatus('Phase 3', s, sets, `Resting ${SET_REST_SECONDS}s between sets`);
-          await waitWithSkip(SET_REST_SECONDS);
-        }
+    async function runPhase3() {
+  const { sets, reps, on, off } = timings.phase3;
+
+  for (let s = 1; s <= sets; s++) {
+    for (let r = 1; r <= reps; r++) {
+
+      setExerciseOn(true);
+      const onBase = phaseStatusString('Phase 3', s, sets, `Rep ${r}/${reps} (on)`);
+      const onWait = waitWithCountdown(on, onBase);
+      fireAndForget(beep(ON_FREQ));
+      await onWait;
+
+      const isLastRep = (s === sets && r === reps);
+      if (isLastRep) {
+        setPhaseStatus('Phase 3', s, sets, `Final rep – C major scale`);
+        setExerciseOn(true);
+        await playCMajorScale(); // keep awaited; this *is* the timed audio event
+      } else {
+        setExerciseOn(false);
+        const offBase = phaseStatusString('Phase 3', s, sets, `Rep ${r}/${reps} (off)`);
+        const offWait = waitWithCountdown(off, offBase);
+        fireAndForget(beep(OFF_FREQ));
+        await offWait;
       }
     }
+
+    if (s < sets) {
+      setExerciseOn(false);
+      await waitWithCountdown(
+        SET_REST_SECONDS,
+        phaseStatusString('Phase 3', s, sets, `Resting ${SET_REST_SECONDS}s between sets`)
+      );
+    }
+  }
+}
+
+
+
+
+
 
     async function runPhases() {
       await runPhase1();
@@ -289,19 +382,28 @@
       setPhaseText('Done');
     }
 
-    function startSequence() {
+
+    async function startSequence(e) {
       if (started) return;
       started = true;
-      unlockAudio();
-      if (startButton) startButton.style.display = 'none';
-      setPhaseText('Starting…');
-      runPhases();
-    }
 
-    // Attach only ONE gesture event so a Pixel 6 tap doesn't register twice
-    startButton.addEventListener(GESTURE_EVENT, startSequence);
+      // Prevent this *starting* click from also being treated as a "skip" click.
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+
+      await unlockAudio();
+      setExerciseOn(false);
+      setPhaseText('Starting…');
+
+      // Defer so the initial click event fully finishes before waits attach listeners.
+      setTimeout(() => {
+        runPhases().catch(err => console.error(err));
+      }, 0);
+    }
     // Also allow tapping anywhere to start (matches the instructions on-screen)
-    document.addEventListener(GESTURE_EVENT, startSequence, { once: true });
+    document.addEventListener(GESTURE_EVENT, startSequence, { once: true, capture: true });
   </script>
 </body>
 </html>
