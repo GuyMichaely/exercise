@@ -89,9 +89,10 @@
       phaseEl.textContent = text;
     }
 
-    function setPhaseStatus(phaseName, currentSet, totalSets, extra = '') {
+    function setPhaseStatus(phaseName, currentSet, totalSets, isOn, extra = '') {
       let base = `${phaseName} – Set ${currentSet}/${totalSets}`;
       if (extra) base += ` – ${extra}`;
+      document.querySelector('body').style['background-color'] = isOn ? "0f0" : "#111";
       setPhaseText(base);
     }
 
@@ -208,16 +209,16 @@
       const { sets, reps, on, off } = timings.phase1;
       for (let s = 1; s <= sets; s++) {
         for (let r = 1; r <= reps; r++) {
-          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (on)`);
+          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (on)`, true);
           await beep(ON_FREQ);
           await waitWithSkip(on);
 
-          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (off)`);
+          setPhaseStatus('Phase 1', s, sets, `Rep ${r}/${reps} (off)`, false);
           await beep(OFF_FREQ);
           await waitWithSkip(off);
         }
         if (s < sets) {
-          setPhaseStatus('Phase 1', s, sets, `Resting ${SET_REST_SECONDS}s between sets`);
+          setPhaseStatus('Phase 1', s, sets, `Resting ${SET_REST_SECONDS}s between sets`, false);
           await waitWithSkip(SET_REST_SECONDS);
         }
       }
@@ -226,15 +227,15 @@
     async function runPhase2() {
       const { sets, postClickWait } = timings.phase2;
       for (let s = 1; s <= sets; s++) {
-        setPhaseStatus('Phase 2', s, sets, 'Beeps');
+        setPhaseStatus('Phase 2', s, sets, 'Beeps', true);
         await beepSquare(ON_FREQ, 0.12);
         await sleep(toMs(0.005));
         await beepSquare(ON_FREQ, 0.12);
 
-        setPhaseStatus('Phase 2', s, sets, 'Waiting for tap');
+        setPhaseStatus('Phase 2', s, sets, 'Waiting for tap', true);
         await waitForGesture();
 
-        setPhaseStatus('Phase 2', s, sets, `Waiting ${postClickWait}s`);
+        setPhaseStatus('Phase 2', s, sets, `Waiting ${postClickWait}s`, false);
         await waitWithSkip(postClickWait);
       }
     }
@@ -260,16 +261,16 @@
       const { sets, reps, on, off } = timings.phase3;
       for (let s = 1; s <= sets; s++) {
         for (let r = 1; r <= reps; r++) {
-          setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (on)`);
+          setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (on)`, true);
           await beep(ON_FREQ);
           await waitWithSkip(on);
 
           const isLastRep = (s === sets && r === reps);
           if (isLastRep) {
-            setPhaseStatus('Phase 3', s, sets, `Final rep – C major scale`);
+            setPhaseStatus('Phase 3', s, sets, `Final rep – C major scale`, false);
             await playCMajorScale();
           } else {
-            setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (off)`);
+            setPhaseStatus('Phase 3', s, sets, `Rep ${r}/${reps} (off)`, false);
             await beep(OFF_FREQ);
             await waitWithSkip(off);
           }
