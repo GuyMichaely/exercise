@@ -1,0 +1,24 @@
+{
+  "name": "guymichaely-exercise",
+  "account_id": "33fbeec446845ec831132810ae18aab5",
+  "compatibility_date": "2026-11-12",
+  "workers_dev": true,
+  "build": {
+    "command": "node scripts/build.mjs"
+  },
+  "assets": {
+    "directory": "./dist",
+    "html_handling": "force-trailing-slash",
+    "not_found_handling": "404-page"
+  },
+  "routes": [
+    {
+      "pattern": "guymichaely.com/exercise",
+      "zone_name": "guymichaely.com"
+    },
+    {
+      "pattern": "guymichaely.com/exercise/*",
+      "zone_name": "guymichaely.com"
+    }
+  ]
+}

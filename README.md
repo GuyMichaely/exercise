@@ -1,1 +1,8 @@
 # exercise
+
+## Cloudflare hosting
+
+Cloudflare Workers Builds deploys this repository automatically when `main` changes.
+`wrangler.jsonc` defines the Worker and production routing. `npm ci && npm run deploy`
+rebuilds and deploys manually using a Cloudflare login. Static files are copied by
+`scripts/build.mjs`; generated output is kept in `dist/` and is not committed.
