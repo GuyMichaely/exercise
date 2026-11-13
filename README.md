@@ -1,15 +1,7 @@
-# exercise
+# Exercise (retired)
 
-## Cloudflare hosting
+Source archive for the Beep Phases exercise timer.
 
-Cloudflare Workers Builds deploys this repository automatically when `main` changes.
-`wrangler.jsonc` defines the Worker and production routing. `npm ci && npm run deploy`
-rebuilds and deploys manually using a Cloudflare login. Static files are copied by
-`scripts/build.mjs`; generated output is kept in `dist/` and is not committed.
-
-Automatic deployments run on pushes to `main`; Cloudflare executes the build
-configured in `wrangler.jsonc` before publishing the static assets.
-
-The app is served at `https://exercise.guymichaely.com/`. The main website
-embeds it at `/exercise/` using `/frame.js`, so browser storage belongs to
-the app subdomain. Existing apex-origin storage is not migrated.
+The hosted page and Cloudflare deployment were retired at the owner's request.
+There is no active website, custom domain, or automatic deployment for this repository.
+Open `index.html` locally to use the archived timer.
