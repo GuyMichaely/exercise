@@ -13,8 +13,4 @@ for (const file of files) {
   const destination = join('dist', prefix, file);
   mkdirSync(dirname(destination), { recursive: true });
   cpSync(file, destination);
-  // Keep the old path working until its iframe wrapper is deployed.
-  const legacy = join("dist", "exercise", file);
-  mkdirSync(dirname(legacy), { recursive: true });
-  cpSync(file, legacy);
 }

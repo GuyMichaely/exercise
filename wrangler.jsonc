@@ -14,14 +14,6 @@
   },
   "routes": [
     {
-      "pattern": "guymichaely.com/exercise",
-      "zone_name": "guymichaely.com"
-    },
-    {
-      "pattern": "guymichaely.com/exercise/*",
-      "zone_name": "guymichaely.com"
-    },
-    {
       "pattern": "exercise.guymichaely.com",
       "custom_domain": true
     }
