@@ -9,3 +9,7 @@ rebuilds and deploys manually using a Cloudflare login. Static files are copied 
 
 Automatic deployments run on pushes to `main`; Cloudflare executes the build
 configured in `wrangler.jsonc` before publishing the static assets.
+
+The app is served at `https://exercise.guymichaely.com/`. The main website
+embeds it at `/exercise/` using `/frame.js`, so browser storage belongs to
+the app subdomain. Existing apex-origin storage is not migrated.

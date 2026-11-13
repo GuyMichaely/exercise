@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 // Deploy only versioned website assets; keep configuration and documentation private.
-const prefix = "exercise";
+const prefix = "";
 rmSync('dist', { recursive: true, force: true });
 const files = execFileSync('git', ['ls-files', '-z'], { encoding: 'utf8' }).split('\0');
 for (const file of files) {
@@ -13,4 +13,8 @@ for (const file of files) {
   const destination = join('dist', prefix, file);
   mkdirSync(dirname(destination), { recursive: true });
   cpSync(file, destination);
+  // Keep the old path working until its iframe wrapper is deployed.
+  const legacy = join("dist", "exercise", file);
+  mkdirSync(dirname(legacy), { recursive: true });
+  cpSync(file, legacy);
 }
